@@ -1,0 +1,93 @@
+// Tradeez Outreach API — Prisma schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  REPLIED
+  INTERESTED
+  NOT_INTERESTED
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum MessageType {
+  INITIAL
+  FOLLOW_UP
+}
+
+enum ActivityType {
+  CREATED
+  CONTACTED
+  REPLIED
+  STATUS_CHANGED
+  NOTE_ADDED
+  FOLLOW_UP_SCHEDULED
+  FOLLOW_UP_MESSAGE_CREATED
+}
+
+model OutreachLead {
+  id              String        @id @default(cuid())
+  dedupeKey       String        @unique
+  businessName    String
+  serviceType     String
+  area            String
+  phone           String?
+  email           String?
+  website         String?
+  source          String
+  sourceUrl       String?
+  rating          Float?
+  reviewCount     Int?
+  status          LeadStatus    @default(NEW)
+  priority        LeadPriority  @default(MEDIUM)
+  nextAction      String?
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  notes      OutreachNote[]
+  messages   OutreachMessage[]
+  activities LeadActivity[]
+}
+
+model OutreachNote {
+  id        String       @id @default(cuid())
+  leadId    String
+  content   String
+  createdAt DateTime     @default(now())
+
+  lead OutreachLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model OutreachMessage {
+  id        String       @id @default(cuid())
+  leadId    String
+  type      MessageType
+  content   String
+  createdAt DateTime     @default(now())
+
+  lead OutreachLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model LeadActivity {
+  id        String       @id @default(cuid())
+  leadId    String
+  type      ActivityType
+  metadata  Json?
+  createdAt DateTime     @default(now())
+
+  lead OutreachLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
