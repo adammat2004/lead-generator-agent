@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -8,7 +9,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { LeadStatus } from '@prisma/client';
+import { LeadPriority, LeadStatus } from '@prisma/client';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { ImportLeadsDto } from './dto/import-leads.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
@@ -17,6 +18,19 @@ import { GenerateMessageDto } from './dto/generate-message.dto';
 import { ScheduleFollowUpDto } from './dto/schedule-follow-up.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { OutreachLeadsService } from './outreach-leads.service';
+
+function parseOptionalNonNegativeInt(raw?: string): number | undefined {
+  if (raw === undefined || raw === '') {
+    return undefined;
+  }
+  const n = parseInt(raw, 10);
+  if (Number.isNaN(n) || n < 0) {
+    throw new BadRequestException(
+      'Follow-up count filters must be non-negative integers',
+    );
+  }
+  return n;
+}
 
 /** v1: create/read/update + notes/messages; no DELETE. */
 @Controller('outreach-leads')
@@ -37,10 +51,32 @@ export class OutreachLeadsController {
   findAll(
     @Query('status', new ParseEnumPipe(LeadStatus, { optional: true }))
     status?: LeadStatus,
+    @Query('priority', new ParseEnumPipe(LeadPriority, { optional: true }))
+    priority?: LeadPriority,
     @Query('area') area?: string,
     @Query('serviceType') serviceType?: string,
+    @Query('minFollowUps') minFollowUpsRaw?: string,
+    @Query('maxFollowUps') maxFollowUpsRaw?: string,
   ) {
-    return this.outreachLeadsService.findAll({ status, area, serviceType });
+    const minFollowUps = parseOptionalNonNegativeInt(minFollowUpsRaw);
+    const maxFollowUps = parseOptionalNonNegativeInt(maxFollowUpsRaw);
+    if (
+      minFollowUps !== undefined &&
+      maxFollowUps !== undefined &&
+      minFollowUps > maxFollowUps
+    ) {
+      throw new BadRequestException(
+        'minFollowUps cannot be greater than maxFollowUps',
+      );
+    }
+    return this.outreachLeadsService.findAll({
+      status,
+      priority,
+      area,
+      serviceType,
+      minFollowUps,
+      maxFollowUps,
+    });
   }
 
   @Get('follow-ups/due')
@@ -81,6 +117,11 @@ export class OutreachLeadsController {
   @Patch(':id/schedule-follow-up')
   scheduleFollowUp(@Param('id') id: string, @Body() dto: ScheduleFollowUpDto) {
     return this.outreachLeadsService.scheduleFollowUp(id, dto.nextFollowUpAt);
+  }
+
+  @Patch(':id/mark-follow-up-done')
+  markFollowUpDone(@Param('id') id: string) {
+    return this.outreachLeadsService.markFollowUpCompleted(id);
   }
 
   @Post(':id/notes')

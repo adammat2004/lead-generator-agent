@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   ActivityType,
   LeadPriority,
@@ -110,19 +114,35 @@ export class OutreachLeadsService {
   /** List leads: exact match on filters; newest first. */
   async findAll(filters: {
     status?: LeadStatus;
+    priority?: LeadPriority;
     area?: string;
     serviceType?: string;
+    minFollowUps?: number;
+    maxFollowUps?: number;
   }) {
     const where: Prisma.OutreachLeadWhereInput = {};
 
     if (filters.status) {
       where.status = filters.status;
     }
+    if (filters.priority) {
+      where.priority = filters.priority;
+    }
     if (filters.area) {
       where.area = filters.area;
     }
     if (filters.serviceType) {
       where.serviceType = filters.serviceType;
+    }
+    const followUpBounds: Prisma.IntFilter = {};
+    if (filters.minFollowUps !== undefined) {
+      followUpBounds.gte = filters.minFollowUps;
+    }
+    if (filters.maxFollowUps !== undefined) {
+      followUpBounds.lte = filters.maxFollowUps;
+    }
+    if (Object.keys(followUpBounds).length > 0) {
+      where.followUpCount = followUpBounds;
     }
 
     return this.prisma.outreachLead.findMany({
@@ -279,6 +299,51 @@ export class OutreachLeadsService {
         type: ActivityType.FOLLOW_UP_SCHEDULED,
         metadata: () => ({
           nextFollowUpAt: nextFollowUpAt.toISOString(),
+        }),
+      },
+      logWithoutStatusChange: true,
+    });
+  }
+
+  async markFollowUpCompleted(id: string) {
+    const existing = await this.prisma.outreachLead.findUnique({
+      where: { id },
+      select: { id: true, status: true, nextFollowUpAt: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Lead with id "${id}" not found`);
+    }
+
+    if (
+      existing.status === LeadStatus.NEW ||
+      existing.status === LeadStatus.NOT_INTERESTED
+    ) {
+      throw new BadRequestException(
+        'Follow-up can only be marked completed for contacted or engaged leads.',
+      );
+    }
+
+    const previousNextFollowUpAt = existing.nextFollowUpAt;
+
+    return this.updateLeadStatus({
+      leadId: id,
+      data: {
+        followUpCount: { increment: 1 },
+        lastContactedAt: new Date(),
+        nextFollowUpAt: null,
+        nextAction: 'Waiting for reply',
+      },
+      activity: {
+        type: ActivityType.FOLLOW_UP_COMPLETED,
+        metadata: () => ({
+          completedAt: new Date().toISOString(),
+          ...(previousNextFollowUpAt
+            ? {
+                previousNextFollowUpAt:
+                  previousNextFollowUpAt.toISOString(),
+              }
+            : {}),
         }),
       },
       logWithoutStatusChange: true,
