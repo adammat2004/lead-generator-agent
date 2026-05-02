@@ -15,9 +15,14 @@ import {
   useMarkLeadInterestedMutation,
   useMarkLeadNotInterestedMutation,
   useMarkLeadRepliedMutation,
+  useMarkFollowUpDoneForLeadMutation,
   useScheduleFollowUpMutation,
 } from '@/hooks/useMutations';
-import { statusDisplay } from '@/lib/leadDisplay';
+import {
+  canMarkFollowUpDoneStatus,
+  formatDaysSinceContact,
+  statusDisplay,
+} from '@/lib/leadDisplay';
 import type { MessageType, OutreachTone } from '@/lib/types';
 import { useEffect, useState } from 'react';
 
@@ -69,10 +74,11 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
   const generateMessage = useGenerateMessageMutation(leadId);
   const generateFollowUpMessage = useGenerateFollowUpMessageMutation(leadId);
   const scheduleFollowUp = useScheduleFollowUpMutation(leadId);
-  const markContacted = useMarkLeadContactedMutation(leadId);
-  const markReplied = useMarkLeadRepliedMutation(leadId);
-  const markInterested = useMarkLeadInterestedMutation(leadId);
-  const markNotInterested = useMarkLeadNotInterestedMutation(leadId);
+  const markFollowUpDone = useMarkFollowUpDoneForLeadMutation(leadId);
+  const markContacted = useMarkLeadContactedMutation();
+  const markReplied = useMarkLeadRepliedMutation();
+  const markInterested = useMarkLeadInterestedMutation();
+  const markNotInterested = useMarkLeadNotInterestedMutation();
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [followUpAt, setFollowUpAt] = useState('');
 
@@ -98,6 +104,7 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
     markNotInterested.reset();
     generateFollowUpMessage.reset();
     scheduleFollowUp.reset();
+    markFollowUpDone.reset();
     setActionSuccess(null);
     setFollowUpAt('');
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset forms when switching lead
@@ -146,6 +153,11 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
     setActionSuccess('Follow-up scheduled.');
   };
 
+  const handleMarkFollowUpDone = async () => {
+    await markFollowUpDone.mutateAsync();
+    setActionSuccess('Follow-up marked complete.');
+  };
+
   const generatedPreview = generateMessage.data?.content ?? '';
   const generatedFollowUpPreview = generateFollowUpMessage.data?.content ?? '';
   const actionPending =
@@ -154,17 +166,18 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
     markInterested.isPending ||
     markNotInterested.isPending;
 
+  const followUpDoneDisabled =
+    !lead || !canMarkFollowUpDoneStatus(lead.status);
+
   const st = lead ? statusDisplay[lead.status] : null;
 
   const runStatusAction = async (
-    action:
-      | typeof markContacted
-      | typeof markReplied
-      | typeof markInterested
-      | typeof markNotInterested,
+    action: {
+      mutateAsync: (id: string) => Promise<unknown>;
+    },
     successMessage: string,
   ) => {
-    await action.mutateAsync();
+    await action.mutateAsync(leadId);
     setActionSuccess(successMessage);
   };
 
@@ -311,6 +324,11 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
                   <span className="font-medium">Last contacted:</span>{' '}
                   {lead.lastContactedAt ? formatDate(lead.lastContactedAt) : '—'}
                 </p>
+                {lead.lastContactedAt ? (
+                  <p className="text-xs text-gray-500">
+                    {formatDaysSinceContact(lead.lastContactedAt)}
+                  </p>
+                ) : null}
                 {actionSuccess ? (
                   <p className="text-xs font-medium text-green-700">{actionSuccess}</p>
                 ) : null}
@@ -337,6 +355,14 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
                 <p className="text-sm text-gray-600">
                   <span className="font-medium">Scheduled follow-up:</span>{' '}
                   {lead.nextFollowUpAt ? formatDate(lead.nextFollowUpAt) : '—'}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Follow-ups completed:</span>{' '}
+                  {lead.followUpCount ?? 0}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Days since last contact:</span>{' '}
+                  {formatDaysSinceContact(lead.lastContactedAt)}
                 </p>
 
                 <div>
@@ -366,6 +392,22 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
                     : 'Schedule Follow-up'}
                 </button>
 
+                <button
+                  type="button"
+                  disabled={followUpDoneDisabled || markFollowUpDone.isPending}
+                  title={
+                    followUpDoneDisabled
+                      ? 'Only for contacted, replied, or interested leads'
+                      : 'Clears scheduled follow-up, increments follow-up count, sets last contact to now'
+                  }
+                  onClick={() => void handleMarkFollowUpDone()}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {markFollowUpDone.isPending
+                    ? 'Saving…'
+                    : 'Mark follow-up done'}
+                </button>
+
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -379,10 +421,14 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
                   </button>
                 </div>
 
-                {(scheduleFollowUp.isError || generateFollowUpMessage.isError) && (
+                {(scheduleFollowUp.isError ||
+                  generateFollowUpMessage.isError ||
+                  markFollowUpDone.isError) && (
                   <p className="text-xs text-red-600">
                     {mutationErrorMessage(
-                      scheduleFollowUp.error ?? generateFollowUpMessage.error,
+                      scheduleFollowUp.error ??
+                        generateFollowUpMessage.error ??
+                        markFollowUpDone.error,
                     )}
                   </p>
                 )}

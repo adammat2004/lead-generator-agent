@@ -9,19 +9,39 @@ import { LeadsDataTable } from '@/components/LeadsDataTable';
 import { importLeads } from '@/lib/api';
 import { useDueFollowUps } from '@/hooks/useDueFollowUps';
 import { useLeads } from '@/hooks/useLeads';
-import { usePatchLeadMutation } from '@/hooks/useMutations';
-import { isFollowUpDue, isFollowUpToday } from '@/lib/leadDisplay';
+import {
+  useMarkFollowUpDoneMutation,
+  useMarkLeadContactedMutation,
+  useScheduleFollowUpRowMutation,
+} from '@/hooks/useMutations';
+import {
+  isFollowUpDue,
+  isFollowUpToday,
+  leadMatchesOptionalFilters,
+} from '@/lib/leadDisplay';
 import type {
   ImportLeadsResponse,
   LeadCandidate,
+  LeadPriority,
   LeadStatus,
   OutreachLead,
 } from '@/lib/types';
 
+function parseNonNegativeIntInput(s: string): number | undefined {
+  const t = s.trim();
+  if (t === '') return undefined;
+  const n = parseInt(t, 10);
+  if (Number.isNaN(n) || n < 0) return undefined;
+  return n;
+}
+
 export default function LeadsPage() {
   const [status, setStatus] = useState<LeadStatus | ''>('');
+  const [priority, setPriority] = useState<LeadPriority | ''>('');
   const [area, setArea] = useState('');
   const [serviceType, setServiceType] = useState('');
+  const [followUpsMin, setFollowUpsMin] = useState('');
+  const [followUpsMax, setFollowUpsMax] = useState('');
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showFindModal, setShowFindModal] = useState(false);
@@ -31,13 +51,35 @@ export default function LeadsPage() {
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [copiedLeadId, setCopiedLeadId] = useState<string | null>(null);
 
+  const listFilterExtras = useMemo(() => {
+    const minFollowUps = parseNonNegativeIntInput(followUpsMin);
+    const maxFollowUps = parseNonNegativeIntInput(followUpsMax);
+    const priorityVal = priority === '' ? undefined : priority;
+    return { minFollowUps, maxFollowUps, priority: priorityVal };
+  }, [followUpsMin, followUpsMax, priority]);
+
   const apiFilters = useMemo(() => {
     const a = area.trim();
     const s = serviceType.trim();
-    const base: { status?: LeadStatus; area?: string; serviceType?: string } =
-      {};
+    const base: {
+      status?: LeadStatus;
+      priority?: LeadPriority;
+      area?: string;
+      serviceType?: string;
+      minFollowUps?: number;
+      maxFollowUps?: number;
+    } = {};
     if (a) base.area = a;
     if (s) base.serviceType = s;
+    if (listFilterExtras.priority != null) {
+      base.priority = listFilterExtras.priority;
+    }
+    if (listFilterExtras.minFollowUps != null) {
+      base.minFollowUps = listFilterExtras.minFollowUps;
+    }
+    if (listFilterExtras.maxFollowUps != null) {
+      base.maxFollowUps = listFilterExtras.maxFollowUps;
+    }
 
     if (activeQuickFilter === 'uncontacted') {
       base.status = 'NEW';
@@ -52,7 +94,7 @@ export default function LeadsPage() {
     }
     if (status) base.status = status;
     return base;
-  }, [status, area, serviceType, activeQuickFilter]);
+  }, [status, area, serviceType, activeQuickFilter, listFilterExtras]);
 
   const { data: leads, isLoading, isError, error, refetch } =
     useLeads(apiFilters);
@@ -62,11 +104,25 @@ export default function LeadsPage() {
     isError: isDueError,
   } = useDueFollowUps(activeQuickFilter === 'followup-due');
 
-  const patchLead = usePatchLeadMutation();
+  const markContactedMutation = useMarkLeadContactedMutation();
+  const scheduleFollowUpRow = useScheduleFollowUpRowMutation();
+  const markFollowUpDoneRow = useMarkFollowUpDoneMutation();
 
   const displayLeads = useMemo(() => {
     let list: OutreachLead[] =
       activeQuickFilter === 'followup-due' ? dueFollowUps ?? [] : leads ?? [];
+    if (activeQuickFilter === 'followup-due') {
+      const { minFollowUps, maxFollowUps, priority: p } = listFilterExtras;
+      if (minFollowUps != null || maxFollowUps != null || p != null) {
+        list = list.filter((l) =>
+          leadMatchesOptionalFilters(l, {
+            minFollowUps,
+            maxFollowUps,
+            priority: p,
+          }),
+        );
+      }
+    }
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -81,7 +137,13 @@ export default function LeadsPage() {
       list = list.filter((l) => isFollowUpToday(l.nextFollowUpAt));
     }
     return list;
-  }, [leads, dueFollowUps, search, activeQuickFilter]);
+  }, [
+    leads,
+    dueFollowUps,
+    search,
+    activeQuickFilter,
+    listFilterExtras,
+  ]);
 
   const quickFilterCounts = useMemo(() => {
     const base = leads ?? [];
@@ -123,7 +185,7 @@ export default function LeadsPage() {
   };
 
   const handleMarkContacted = (id: string) => {
-    patchLead.mutate({ id, payload: { status: 'CONTACTED' } });
+    markContactedMutation.mutate(id);
   };
 
   const handleScheduleFollowUp = (id: string) => {
@@ -134,7 +196,11 @@ export default function LeadsPage() {
       window.alert('Invalid date.');
       return;
     }
-    patchLead.mutate({ id, payload: { nextFollowUpAt: d.toISOString() } });
+    scheduleFollowUpRow.mutate({ id, nextFollowUpAt: d.toISOString() });
+  };
+
+  const handleMarkFollowUpDone = (id: string) => {
+    markFollowUpDoneRow.mutate(id);
   };
 
   const handleImportSelected = async (
@@ -194,11 +260,17 @@ export default function LeadsPage() {
                 <FilterDropdown
                   onClose={() => setShowFilters(false)}
                   status={status}
+                  priority={priority}
                   area={area}
                   serviceType={serviceType}
+                  followUpsMin={followUpsMin}
+                  followUpsMax={followUpsMax}
                   onChangeStatus={setStatus}
+                  onChangePriority={setPriority}
                   onChangeArea={setArea}
                   onChangeServiceType={setServiceType}
+                  onChangeFollowUpsMin={setFollowUpsMin}
+                  onChangeFollowUpsMax={setFollowUpsMax}
                   onApply={() => void refetch()}
                 />
               )}
@@ -291,9 +363,14 @@ export default function LeadsPage() {
                 onSelectLead={setSelectedLeadId}
                 onMarkContacted={handleMarkContacted}
                 onScheduleFollowUp={handleScheduleFollowUp}
+                onMarkFollowUpDone={handleMarkFollowUpDone}
                 onCopySnippet={handleCopySnippet}
                 copiedLeadId={copiedLeadId}
-                rowActionPending={patchLead.isPending}
+                rowActionPending={
+                  markContactedMutation.isPending ||
+                  scheduleFollowUpRow.isPending ||
+                  markFollowUpDoneRow.isPending
+                }
               />
             )}
           </div>

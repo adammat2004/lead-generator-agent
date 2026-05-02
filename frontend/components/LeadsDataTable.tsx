@@ -3,6 +3,7 @@
 import {
   Calendar,
   Check,
+  CheckCircle2,
   Copy,
   ExternalLink,
   Star,
@@ -10,6 +11,8 @@ import {
 import { useState } from 'react';
 import type { OutreachLead } from '@/lib/types';
 import {
+  canMarkFollowUpDoneStatus,
+  formatDaysSinceContact,
   isFollowUpOverdue,
   isFollowUpToday,
   priorityDisplay,
@@ -22,6 +25,7 @@ type Props = {
   onSelectLead: (id: string) => void;
   onMarkContacted: (id: string) => void;
   onScheduleFollowUp: (id: string) => void;
+  onMarkFollowUpDone: (id: string) => void;
   onCopySnippet: (id: string, text: string) => void;
   copiedLeadId: string | null;
   rowActionPending?: boolean;
@@ -33,6 +37,7 @@ export function LeadsDataTable({
   onSelectLead,
   onMarkContacted,
   onScheduleFollowUp,
+  onMarkFollowUpDone,
   onCopySnippet,
   copiedLeadId,
   rowActionPending,
@@ -69,6 +74,7 @@ export function LeadsDataTable({
               'Source',
               'Status',
               'Next action',
+              'Follow-ups',
               'Last contacted',
               'Actions',
             ].map((h) => (
@@ -180,16 +186,24 @@ export function LeadsDataTable({
                     )}
                   </div>
                 </td>
+                <td className="whitespace-nowrap px-6 py-4 text-sm tabular-nums text-gray-700">
+                  {lead.followUpCount ?? 0}
+                </td>
                 <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">
-                  <span
-                    className={`${
-                      urgent || isFollowUpToday(lead.nextFollowUpAt)
-                        ? 'font-medium text-gray-900'
-                        : 'text-gray-700'
-                    }`}
-                  >
-                    {formatDate(lead.lastContactedAt)}
-                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <span
+                      className={`${
+                        urgent || isFollowUpToday(lead.nextFollowUpAt)
+                          ? 'font-medium text-gray-900'
+                          : 'text-gray-700'
+                      }`}
+                    >
+                      {formatDate(lead.lastContactedAt)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {formatDaysSinceContact(lead.lastContactedAt)}
+                    </span>
+                  </div>
                 </td>
                 <td className="whitespace-nowrap px-6 py-4">
                   <div
@@ -236,6 +250,21 @@ export function LeadsDataTable({
                       className="rounded p-1.5 hover:bg-gray-200 disabled:opacity-40"
                     >
                       <Calendar className="h-4 w-4 text-gray-600" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Mark follow-up done"
+                      disabled={
+                        rowActionPending ||
+                        !canMarkFollowUpDoneStatus(lead.status)
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMarkFollowUpDone(lead.id);
+                      }}
+                      className="rounded p-1.5 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <CheckCircle2 className="h-4 w-4 text-gray-600" />
                     </button>
                   </div>
                 </td>

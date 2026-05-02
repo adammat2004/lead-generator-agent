@@ -1,4 +1,4 @@
-import type { LeadPriority, LeadStatus } from './types';
+import type { LeadPriority, LeadStatus, OutreachLead } from './types';
 
 /** Maps API LeadStatus → Figma-style labels and chip colors */
 export const statusDisplay: Record<
@@ -73,4 +73,48 @@ export function isFollowUpDue(iso: string | null): boolean {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return false;
   return d.getTime() <= Date.now();
+}
+
+/** Local calendar-day difference: last contact → today */
+export function formatDaysSinceContact(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const startOfDay = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const diffMs = startOfDay(new Date()).getTime() - startOfDay(d).getTime();
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return `${days} days ago`;
+}
+
+export function canMarkFollowUpDoneStatus(status: LeadStatus): boolean {
+  return (
+    status === 'CONTACTED' ||
+    status === 'REPLIED' ||
+    status === 'INTERESTED'
+  );
+}
+
+/** Client-side filter for lists not loaded via `findAll` (e.g. follow-ups due). */
+export function leadMatchesOptionalFilters(
+  lead: OutreachLead,
+  filters: {
+    minFollowUps?: number;
+    maxFollowUps?: number;
+    priority?: LeadPriority;
+  },
+): boolean {
+  const n = lead.followUpCount ?? 0;
+  if (filters.minFollowUps != null && n < filters.minFollowUps) {
+    return false;
+  }
+  if (filters.maxFollowUps != null && n > filters.maxFollowUps) {
+    return false;
+  }
+  if (filters.priority != null && lead.priority !== filters.priority) {
+    return false;
+  }
+  return true;
 }

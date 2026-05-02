@@ -18,7 +18,8 @@ export type ActivityType =
   | 'STATUS_CHANGED'
   | 'NOTE_ADDED'
   | 'FOLLOW_UP_SCHEDULED'
-  | 'FOLLOW_UP_MESSAGE_CREATED';
+  | 'FOLLOW_UP_MESSAGE_CREATED'
+  | 'FOLLOW_UP_COMPLETED';
 
 export interface OutreachLead {
   id: string;
@@ -37,6 +38,8 @@ export interface OutreachLead {
   nextAction: string | null;
   lastContactedAt: string | null;
   nextFollowUpAt: string | null;
+  /** Omitted until API/DB migration applied; treat as 0 */
+  followUpCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -153,8 +156,13 @@ export interface GatherLeadsResponse {
 
 export interface LeadsQueryParams {
   status?: LeadStatus;
+  priority?: LeadPriority;
   area?: string;
   serviceType?: string;
+  /** Inclusive lower bound on completed follow-ups logged */
+  minFollowUps?: number;
+  /** Inclusive upper bound on completed follow-ups logged */
+  maxFollowUps?: number;
 }
 
 export interface ImportLeadItemPayload extends CreateLeadPayload {

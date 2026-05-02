@@ -31,8 +31,15 @@ export async function getLeads(
   const { data } = await api.get<OutreachLead[]>('/outreach-leads', {
     params: {
       ...(params?.status && { status: params.status }),
+      ...(params?.priority && { priority: params.priority }),
       ...(params?.area && { area: params.area }),
       ...(params?.serviceType && { serviceType: params.serviceType }),
+      ...(params?.minFollowUps != null && {
+        minFollowUps: params.minFollowUps,
+      }),
+      ...(params?.maxFollowUps != null && {
+        maxFollowUps: params.maxFollowUps,
+      }),
     },
   });
   return data;
@@ -96,6 +103,13 @@ export async function scheduleFollowUp(
   const { data } = await api.patch<OutreachLead>(
     `/outreach-leads/${id}/schedule-follow-up`,
     payload,
+  );
+  return data;
+}
+
+export async function markFollowUpDone(id: string): Promise<OutreachLead> {
+  const { data } = await api.patch<OutreachLead>(
+    `/outreach-leads/${id}/mark-follow-up-done`,
   );
   return data;
 }

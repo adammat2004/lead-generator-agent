@@ -9,6 +9,7 @@ import {
   generateFollowUpMessage,
   scheduleFollowUp,
   getDueFollowUps,
+  markFollowUpDone,
   markLeadContacted,
   markLeadInterested,
   markLeadNotInterested,
@@ -101,6 +102,52 @@ export function useScheduleFollowUpMutation(leadId: string | null) {
   });
 }
 
+export function useMarkFollowUpDoneMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => markFollowUpDone(id),
+    onSuccess: (_, id) => {
+      void qc.invalidateQueries({ queryKey: leadDetailQueryKey(id) });
+      void qc.invalidateQueries({ queryKey: ['outreach-leads'] });
+      void qc.invalidateQueries({ queryKey: ['outreach-followups-due'] });
+    },
+  });
+}
+
+export function useScheduleFollowUpRowMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      nextFollowUpAt,
+    }: {
+      id: string;
+      nextFollowUpAt: string;
+    }) => scheduleFollowUp(id, { nextFollowUpAt }),
+    onSuccess: (_, { id }) => {
+      void qc.invalidateQueries({ queryKey: leadDetailQueryKey(id) });
+      void qc.invalidateQueries({ queryKey: ['outreach-leads'] });
+      void qc.invalidateQueries({ queryKey: ['outreach-followups-due'] });
+    },
+  });
+}
+
+export function useMarkFollowUpDoneForLeadMutation(leadId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!leadId) throw new Error('No lead selected');
+      return markFollowUpDone(leadId);
+    },
+    onSuccess: () => {
+      if (!leadId) return;
+      void qc.invalidateQueries({ queryKey: leadDetailQueryKey(leadId) });
+      void qc.invalidateQueries({ queryKey: ['outreach-leads'] });
+      void qc.invalidateQueries({ queryKey: ['outreach-followups-due'] });
+    },
+  });
+}
+
 export function useUpdateLeadMutation(leadId: string | null) {
   const qc = useQueryClient();
   return useMutation({
@@ -143,38 +190,35 @@ export function useCreateLeadMutation() {
   });
 }
 
-function useLeadActionMutation(
-  leadId: string | null,
+/** Status transitions: same behavior from table row or detail panel (explicit lead id). */
+function useLeadStatusActionMutation(
   action: (id: string) => Promise<unknown>,
 ) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => {
-      if (!leadId) throw new Error('No lead selected');
-      return action(leadId);
-    },
-    onSuccess: () => {
-      if (!leadId) return;
-      void qc.invalidateQueries({ queryKey: leadDetailQueryKey(leadId) });
+    mutationFn: (id: string) => action(id),
+    onSuccess: (_, id) => {
+      void qc.invalidateQueries({ queryKey: leadDetailQueryKey(id) });
       void qc.invalidateQueries({ queryKey: ['outreach-leads'] });
+      void qc.invalidateQueries({ queryKey: ['outreach-followups-due'] });
     },
   });
 }
 
-export function useMarkLeadContactedMutation(leadId: string | null) {
-  return useLeadActionMutation(leadId, markLeadContacted);
+export function useMarkLeadContactedMutation() {
+  return useLeadStatusActionMutation(markLeadContacted);
 }
 
-export function useMarkLeadRepliedMutation(leadId: string | null) {
-  return useLeadActionMutation(leadId, markLeadReplied);
+export function useMarkLeadRepliedMutation() {
+  return useLeadStatusActionMutation(markLeadReplied);
 }
 
-export function useMarkLeadInterestedMutation(leadId: string | null) {
-  return useLeadActionMutation(leadId, markLeadInterested);
+export function useMarkLeadInterestedMutation() {
+  return useLeadStatusActionMutation(markLeadInterested);
 }
 
-export function useMarkLeadNotInterestedMutation(leadId: string | null) {
-  return useLeadActionMutation(leadId, markLeadNotInterested);
+export function useMarkLeadNotInterestedMutation() {
+  return useLeadStatusActionMutation(markLeadNotInterested);
 }
 
 export function useGetDueFollowUpsMutation() {
